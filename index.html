@@ -1,0 +1,108 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#157a36"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png">
+<title>Gestor Comercial</title>
+<style>
+:root{--a:#1f2937;--b:#e5e7eb}*{box-sizing:border-box}
+body{margin:0;font:17px system-ui,sans-serif;background:#f3f4f6;color:#111}
+header{background:var(--a);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:2;border-bottom:5px solid var(--b)}
+header b{flex:1;font-size:18px}main{padding:14px;max-width:640px;margin:auto}
+button,input,select{font:inherit;padding:14px;border-radius:12px;border:1px solid #cbd5e1;width:100%;margin:4px 0;background:#fff}
+button{background:var(--a);color:#fff;border:0;font-weight:600}button.s{background:#fff;color:var(--a);border:2px solid var(--a)}
+button.big{padding:22px;text-align:left;font-size:19px;margin:10px 0}
+.card{background:#fff;border-radius:14px;padding:12px;margin:8px 0;box-shadow:0 1px 3px #0002}
+.row{display:flex;gap:8px}.row>*{flex:1}.chip{font-size:13px;padding:3px 10px;border-radius:99px;background:var(--b);color:#111}
+#msg{position:fixed;left:12px;right:12px;bottom:16px;background:#111;color:#fff;padding:12px;border-radius:10px;display:none;z-index:20}
+video{width:100%;border-radius:12px;background:#000}small{color:#555}.bad{color:#b91c1c;font-weight:700}.ok{color:#15803d;font-weight:700}
+</style></head><body><div id="app"></div><div id="msg"></div>
+<script>
+const API='https://script.google.com/macros/s/AKfycbzi7AMoow7UMyT2ODXaCWF8Xya-6FjSCvyqkoD5TnVYWtFaO70KEsv8cL3rjrzyUsMR/exec';
+const NEG={gp:{n:'GERARDO POLIRUBRO',a:'#157a36',b:'#f4c20d'},cd:{n:'CANDU DESPENSA',a:'#c8102e',b:'#0b3d91'},ci:{n:'CANDU INGENIO',a:'#0b3d91',b:'#c8102e'}};
+const MOD={compras:['Lista de compras','🛒'],boletas:['Carga de boletas','🧾'],stock:['Control de stock','📦']};
+const $=s=>document.querySelector(s),E=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const num=v=>parseFloat(String(v).replace(',','.'))||0,$$=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+let S={tok:localStorage.tok||'',neg:'',g:{},doc:null,dirty:false};
+function toast(t){const m=$('#msg');m.textContent=t;m.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>m.style.display='none',4500)}
+async function api(a,d={}){try{const r=await fetch(API,{method:'POST',body:JSON.stringify(Object.assign({a,t:S.tok,n:S.neg,g:S.g},d))});const j=await r.json();
+  if(j.err){toast(j.err);if(j.auth){localStorage.removeItem('tok');S.tok='';login()}}return j}catch(e){toast('Sin conexión con el servidor. Revisá Internet e intentá de nuevo.');return{err:1}}}
+function view(t,b,back){const k=NEG[S.neg]||{a:'#1f2937',b:'#e5e7eb'};document.documentElement.style.setProperty('--a',k.a);document.documentElement.style.setProperty('--b',k.b);
+  $('#app').innerHTML=`<header>${back?'<button class="s" id="bk" style="width:auto;margin:0;padding:8px 14px">←</button>':''}<b>${t}</b></header><main>${b}</main>`;if(back)$('#bk').onclick=back}
+function login(){S.neg='';view('GESTOR COMERCIAL','<p>Ingresá tu código de acceso personal (te lo da el administrador).</p><input id="c" placeholder="Código" autocapitalize="off" autocomplete="off"><button id="ok">Entrar</button>');
+  $('#ok').onclick=async()=>{S.tok=$('#c').value.trim();const r=await api('ping');if(r.name){localStorage.tok=S.tok;home()}}}
+function home(){if(!S.tok)return login();S.neg='';S.g={};S.doc=null;
+  view('GESTOR COMERCIAL','<p><small>Administración de mercadería</small></p>'+Object.keys(NEG).map(k=>`<button class="big" style="background:${NEG[k].a};border-bottom:8px solid ${NEG[k].b}" data-k="${k}">${NEG[k].n}</button>`).join(''));
+  document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{S.neg=b.dataset.k;S.g={};menu()})}
+function menu(){view(NEG[S.neg].n,Object.keys(MOD).map(m=>`<button class="big" data-m="${m}">${MOD[m][1]} ${MOD[m][0]} 🔒</button>`).join('')+'<button class="big" data-m="precios">🔍 Consultar precios</button><button class="s" data-m="admin">⚙️ Configuración 🔒</button>',home);
+  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const m=b.dataset.m;m==='precios'?price():ask(m)})}
+function ask(m){const go=()=>m==='admin'?cfg():lista(m);if(S.g[m])return go();
+  view('Ingresá el PIN','<input id="p" type="password" inputmode="numeric" placeholder="PIN"><button id="ok">Entrar</button>',menu);$('#p').focus();
+  $('#ok').onclick=async()=>{const r=await api('pin',{m,pin:$('#p').value});if(r.g){S.g[m]=r.g;go()}}}
+async function lista(m){view(MOD[m]?MOD[m][0]:'',`<p>Cargando…</p>`,menu);const r=await api('list',{m});if(r.err)return menu();
+  view(MOD[m][0],'<button id="nw">＋ Nueva</button>'+(r.l.length?r.l.map(d=>`<div class="card" data-i="${E(d.id)}"><b>${E(d.id)}</b><br><span class="chip">${d.estado==='final'?'Finalizado':'Borrador'}</span> <small>${d.n} prod. · ${E(d.user)} · ${E(d.upd.slice(0,10))}</small></div>`).join(''):'<p><small>Todavía no hay documentos. Tocá "Nueva".</small></p>'),menu);
+  $('#nw').onclick=()=>{S.doc={id:'',rev:0,neg:S.neg,tipo:m,estado:'borrador',fecha:new Date().toISOString().slice(0,10),items:[],prov:'',fact:'',total:0};S.dirty=false;editor()};
+  document.querySelectorAll('[data-i]').forEach(c=>c.onclick=async()=>{const x=await api('get',{m,id:c.dataset.i});if(x.doc){S.doc=x.doc;S.dirty=false;editor()}})}
+function st(t){const e=$('#st');if(e)e.textContent=t||(S.doc.estado==='final'?'Finalizado':S.dirty?'Pendiente de sincronización':'Sincronizado · rev '+S.doc.rev)}
+function editor(){const d=S.doc,m=d.tipo,fin=d.estado==='final',B=m==='boletas',dis=fin?'disabled':'';
+  view(MOD[m][0]+(d.id?' · '+d.id:''),`<div class="card"><span class="chip" id="st"></span><input type="date" id="f" value="${E(d.fecha)}" ${dis}>
+  ${B?`<input id="pv" placeholder="Proveedor" value="${E(d.prov)}" ${dis}><input id="fa" placeholder="N° de factura o boleta" value="${E(d.fact)}" ${dis}><input id="tt" inputmode="decimal" placeholder="Total declarado de la factura" value="${d.total||''}" ${dis}>`:''}</div>
+  ${fin?'':'<div class="row"><input id="q" placeholder="Código, barras o nombre"><button id="sc" style="max-width:80px">📷</button></div><div id="rs"></div><div id="fm"></div>'}
+  <div id="it"></div><div id="tot"></div>${fin?'':'<button id="sv" class="s">Guardar borrador</button><button id="fz">Finalizar</button>'}<button id="ex" class="s">Exportar CSV</button>`,
+  ()=>{if(S.dirty&&!confirm('Hay cambios sin guardar. ¿Salir igual?'))return;S.doc=null;lista(m)});
+  const mk=()=>{S.dirty=true;st();tot()};
+  $('#f').oninput=e=>{d.fecha=e.target.value;mk()};
+  if(B){$('#pv').oninput=e=>{d.prov=e.target.value;mk()};$('#fa').oninput=e=>{d.fact=e.target.value;mk()};$('#tt').oninput=e=>{d.total=num(e.target.value);mk()}}
+  if(!fin){buscador(p=>form(p),$('#q'),$('#sc'),$('#rs'));$('#sv').onclick=()=>guardar('borrador');$('#fz').onclick=()=>{if(confirm('¿Finalizar? Después no se podrá modificar.'))guardar('final')}}
+  $('#ex').onclick=exportar;items();tot();st()}
+function items(){const d=S.doc,B=d.tipo==='boletas',fin=d.estado==='final';
+  $('#it').innerHTML=d.items.map((i,n)=>`<div class="card"><b>${E(i.cod)||'<span class="bad">SIN CÓDIGO (pendiente)</span>'}</b> ${E(i.desc)}<br>${i.q} ${E(i.u||'')} ${B?'· $'+$$(i.imp)+' · unit. $'+$$(i.imp/i.q):''} ${i.com?'<br><small>'+E(i.com)+'</small>':''}${fin?'':`<button class="s" data-r="${n}" style="margin-top:8px">Quitar</button>`}</div>`).join('');
+  document.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{d.items.splice(+b.dataset.r,1);S.dirty=true;items();tot();st()})}
+function tot(){const d=S.doc;let h=`<p><b>${d.items.length}</b> productos</p>`;
+  if(d.tipo==='boletas'){const s=d.items.reduce((a,i)=>a+i.imp,0),df=s-d.total;h+=`<p>Cargado: $${$$(s)}<br>Declarado: $${$$(d.total)}<br>Diferencia: <span class="${Math.abs(df)<.01?'ok':'bad'}">$${$$(df)}</span></p>`}
+  $('#tot').innerHTML=h}
+function buscador(pick,inp,btn,box){let tm;const go=async()=>{const t=inp.value.trim();if(!t){box.innerHTML='';return}const r=await api('search',{q:t});if(r.err)return;
+  box.innerHTML=r.r.map((p,i)=>`<div class="card" data-p="${i}"><b>${E(p[0])}</b> ${E(p[1])}${pick?'':`<br>Barras: ${E(p[2])||'-'}<br>Contado: <b>${E(p[3])}</b> · Stock: <b>${E(p[4])}</b><br><small>${NEG[S.neg].n}</small>`}</div>`).join('')+(r.r.length?'':'<div class="card">No se encontró el producto.'+(pick?'<button class="s" id="pe">Registrar como producto pendiente</button>':'')+'</div>');
+  document.querySelectorAll('[data-p]').forEach(c=>c.onclick=()=>pick&&pick(r.r[+c.dataset.p]));
+  const pe=$('#pe');if(pe)pe.onclick=async()=>{const ds=prompt('Descripción del producto nuevo:');if(!ds)return;const bar=/^\d{6,}$/.test(t)?t:'';const x=await api('pend',{bar,desc:ds});if(!x.err){toast('Guardado en Productos pendientes');box.innerHTML='';pick(['',ds,bar,'',''])}}};
+  inp.oninput=()=>{clearTimeout(tm);tm=setTimeout(go,350)};inp.onkeydown=e=>{if(e.key==='Enter')go()};btn.onclick=()=>scan(v=>{inp.value=v;go()})}
+function form(p){const d=S.doc,m=d.tipo;$('#rs').innerHTML='';
+  $('#fm').innerHTML=`<div class="card"><b>${E(p[0])||'(pendiente)'}</b> ${E(p[1])}<input id="qt" inputmode="decimal" placeholder="Cantidad ${m==='stock'?'contada':''}">
+  ${m==='boletas'?'<input id="im" inputmode="decimal" placeholder="Importe total del producto"><small id="pu"></small>':''}
+  ${m==='compras'?'<select id="un"><option>u</option><option>kg</option><option>caja</option><option>bolsa</option></select><input id="cm" placeholder="Comentario (opcional)">':''}<button id="ad">Agregar</button></div>`;
+  $('#qt').focus();if(m==='boletas'){const u=()=>{const q=num($('#qt').value),i=num($('#im').value);$('#pu').textContent=q>0?'Precio unitario: $'+$$(i/q):''};$('#qt').oninput=u;$('#im').oninput=u}
+  $('#ad').onclick=()=>{const q=num($('#qt').value);if(m==='stock'?$('#qt').value.trim()==='':!(q>0))return toast('Ingresá una cantidad válida');
+    const it={cod:p[0],desc:p[1],bar:p[2],q,u:m==='compras'?$('#un').value:'',com:m==='compras'?$('#cm').value.trim():'',imp:m==='boletas'?num($('#im').value):0};
+    if(m==='boletas'&&!(it.imp>0))return toast('Ingresá el importe total del producto');
+    const j=it.cod?d.items.findIndex(x=>x.cod===it.cod):-1;
+    if(j>=0){const r=prompt('Este producto ya está. Escribí 1 para SUMAR, 2 para REEMPLAZAR. Otra tecla cancela.');if(r==='1'){d.items[j].q+=it.q;d.items[j].imp+=it.imp;if(it.com)d.items[j].com=it.com}else if(r==='2')d.items[j]=it;else return}else d.items.push(it);
+    S.dirty=true;$('#fm').innerHTML='';$('#q').value='';items();tot();st()}}
+async function guardar(est){const c=JSON.parse(JSON.stringify(S.doc));c.estado=est;st('Guardando…');const r=await api('save',{d:c});
+  if(r.conflict){st('Error de sincronización');if(confirm('Otro celular modificó este documento. Aceptar = cargar la versión nueva (se pierden tus cambios sin guardar). Cancelar = seguir editando.')){S.doc=r.doc;S.dirty=false;editor()}return}
+  if(r.doc){S.doc=r.doc;S.dirty=false;toast(est==='final'?'Documento finalizado':'Guardado y sincronizado');editor()}else st('Error de sincronización')}
+function exportar(){const d=S.doc,B=d.tipo==='boletas',C=d.tipo==='compras';
+  const z=c=>({r:/^0/.test(c)?'="'+c+'"':String(c)}),f=v=>v&&v.r!==undefined?v.r:typeof v==='number'?String(+v.toFixed(4)).replace('.',','):'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const L=[['NEGOCIO',NEG[d.neg].n],['TIPO',{compras:'LISTA DE COMPRAS',boletas:'BOLETA',stock:'CONTROL DE STOCK'}[d.tipo]],['FECHA',d.fecha],['ID',d.id||'(sin guardar)']];
+  if(B)L.push(['PROVEEDOR',d.prov],['FACTURA',d.fact]);L.push([]);
+  L.push(B?['codigo','descripcion','cantidad','precio unitario','precio total']:C?['codigo','descripcion','cantidad','Negocio','comentario']:['codigo','descripcion','cantidad']);
+  d.items.forEach(i=>L.push(B?[z(i.cod),i.desc,i.q,i.imp/i.q,i.imp]:C?[z(i.cod),i.desc,i.q,d.neg.toUpperCase(),i.com||'']:[z(i.cod),i.desc,i.q]));
+  const csv='\ufeff'+L.map(r=>r.map(f).join(';')).join('\r\n'),a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`${d.neg.toUpperCase()}_${d.tipo}_${d.fecha}_${d.id||'borrador'}.csv`;a.click()}
+function price(){view('Consultar precios · '+NEG[S.neg].n,'<div class="row"><input id="q" placeholder="Código, barras o nombre"><button id="sc" style="max-width:80px">📷</button></div><div id="rs"></div>',menu);buscador(null,$('#q'),$('#sc'),$('#rs'))}
+async function scan(cb){if(!('BarcodeDetector' in window)||!navigator.mediaDevices)return toast('Este navegador no soporta el escáner. Usá la búsqueda manual.');
+  const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:#000e;z-index:9;padding:14px';ov.innerHTML='<video playsinline muted></video><button class="s">Cerrar</button>';document.body.appendChild(ov);
+  let s,run=true;const stop=()=>{run=false;if(s)s.getTracks().forEach(t=>t.stop());ov.remove()};ov.querySelector('button').onclick=stop;
+  try{s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}})}catch(e){stop();return toast('No se pudo usar la cámara. Revisá el permiso o usá la búsqueda manual.')}
+  const v=ov.querySelector('video');v.srcObject=s;await v.play();const bd=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39']});
+  while(run){try{const c=await bd.detect(v);if(c.length){stop();cb(c[0].rawValue);return}}catch(e){}await new Promise(r=>setTimeout(r,250))}}
+async function cfg(){view('Configuración','<p>Cargando…</p>',menu);const r=await api('emps');if(r.err)return menu();
+  view('Configuración',`<h3>Empleados</h3>${r.l.map(e=>`<div class="card">${E(e.name)} <span class="chip">${e.on?'Activo':'Revocado'}</span>${e.on?`<button class="s" data-o="${E(e.id)}">Revocar acceso</button>`:''}</div>`).join('')}<button id="ea">＋ Agregar empleado</button>
+  <h3>PIN</h3><select id="pm"><option value="compras">Lista de compras</option><option value="boletas">Carga de boletas</option><option value="stock">Control de stock</option><option value="admin">Administrador</option></select><input id="pn" type="password" inputmode="numeric" placeholder="Nuevo PIN (solo números)"><button id="pg">Cambiar PIN</button>
+  <h3>Catálogo</h3><button id="rl" class="s">Recargar catálogo de ${NEG[S.neg].n}</button><button id="bc" class="s">Corregir código de barras</button>`,menu);
+  document.querySelectorAll('[data-o]').forEach(b=>b.onclick=async()=>{if(confirm('¿Revocar el acceso de este empleado?')){const x=await api('empOff',{id:b.dataset.o});if(!x.err)cfg()}});
+  $('#ea').onclick=async()=>{const n=prompt('Nombre del empleado:');if(!n)return;const x=await api('empAdd',{name:n});if(x.code){alert('Código de acceso de '+n+':\n\n'+x.code+'\n\nAnotalo y entregáselo. No se vuelve a mostrar.');cfg()}};
+  $('#pg').onclick=async()=>{const x=await api('setPin',{m:$('#pm').value,pin:$('#pn').value});if(!x.err)toast('PIN cambiado')};
+  $('#rl').onclick=async()=>{toast('Recargando…');const x=await api('reload');if(!x.err)toast('Catálogo recargado')};
+  $('#bc').onclick=async()=>{const c=prompt('Código interno del producto:');if(!c)return;const b=prompt('Nuevo código de barras:');if(!b)return;
+    const all=confirm('Aceptar = actualizar en los TRES negocios (donde exista ese código).\nCancelar = solo en '+NEG[S.neg].n);const x=await api('bar',{cod:c,bar:b,all});if(!x.err)toast('Código de barras actualizado')}}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+home();
+</script></body></html>
