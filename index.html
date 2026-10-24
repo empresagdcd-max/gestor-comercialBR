@@ -24,7 +24,7 @@ const num=v=>parseFloat(String(v).replace(',','.'))||0,$$=n=>(+n||0).toLocaleStr
 let S={tok:localStorage.tok||'',neg:'',g:{},doc:null,dirty:false};
 function toast(t){const m=$('#msg');m.textContent=t;m.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>m.style.display='none',4500)}
 async function api(a,d={}){try{const r=await fetch(API,{method:'POST',body:JSON.stringify(Object.assign({a,t:S.tok,n:S.neg,g:S.g},d))});const j=await r.json();
-  if(j.err){toast(j.err);if(j.auth){localStorage.removeItem('tok');S.tok='';login()}}return j}catch(e){toast('Sin conexión con el servidor. Revisá Internet e intentá de nuevo.');return{err:1}}}
+  if(j.err){if(!d.quiet)toast(j.err);if(j.auth){localStorage.removeItem('tok');S.tok='';login()}}return j}catch(e){toast('Sin conexión con el servidor. Revisá Internet e intentá de nuevo.');return{err:1}}}
 function view(t,b,back){const k=NEG[S.neg]||{a:'#1f2937',b:'#e5e7eb'};document.documentElement.style.setProperty('--a',k.a);document.documentElement.style.setProperty('--b',k.b);
   $('#app').innerHTML=`<header>${back?'<button class="s" id="bk" style="width:auto;margin:0;padding:8px 14px">←</button>':''}<b>${t}</b></header><main>${b}</main>`;if(back)$('#bk').onclick=back}
 function login(){S.neg='';view('GESTOR COMERCIAL','<p>Ingresá tu código de acceso personal (te lo da el administrador).</p><input id="c" placeholder="Código" autocapitalize="off" autocomplete="off"><button id="ok">Entrar</button>');
@@ -108,8 +108,8 @@ const C100=v=>Math.round((+v||0)*100),mny=c=>$$(c/100),fd=f=>String(f||'').split
 const LS=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k));v===null?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
 const nz=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
 const loc=()=>Object.keys(localStorage).filter(k=>k.startsWith('bd_')).map(k=>LS(k)).filter(x=>x&&x.n===S.neg).map(x=>x.d);
-const DIRTY=new Set();let SY=0,TM=0;
-async function catalogo(f){const k='cat_'+S.neg,c=LS(k);if(!f&&c&&Date.now()-c.t<216e5)return c.d;const r=await api('catalog');if(r.c){LS(k,{t:Date.now(),d:r.c});return r.c}return c?c.d:null}
+const DIRTY=new Set();let SY=0,TM=0,CF=0;
+async function catalogo(f){const k='cat_'+S.neg,c=LS(k);if(!f&&c&&Date.now()-c.t<216e5)return c.d;if(!f&&Date.now()-CF<3e5)return c?c.d:null;const r=await api('catalog',{quiet:1});if(r.c){LS(k,{t:Date.now(),d:r.c});return r.c}CF=Date.now();return c?c.d:null}
 async function bus(q){const d=await catalogo();if(!d)return api('search',{q});const t=nz(q);if(!t)return{r:[]};const ex=d.filter(r=>r[0].toLowerCase()===t||r[2]===t);
   if(ex.length)return{r:ex.slice(0,30)};const w=t.split(/\s+/);return{r:d.filter(r=>{const x=nz(r[1]+' '+r[0]);return w.every(y=>x.includes(y))}).slice(0,30)}}
 function bst(){const e=$('#st');if(e&&S.doc)e.textContent=DIRTY.has(S.doc.id)?(navigator.onLine?'⏳ Pendiente de sincronizar':'📴 Sin conexión · guardado en el celular'):'✅ Sincronizado'}
@@ -123,16 +123,21 @@ async function bsync(d){if(SY||!DIRTY.has(d.id))return;SY=1;const sent=JSON.stri
   bst()}
 function bNew(){const t=new Date(),p=n=>String(n).padStart(2,'0'),f=`${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}`;
   S.doc={id:'B'+S.neg.toUpperCase()+'-'+f.replace(/-/g,'')+'-'+p(t.getHours())+p(t.getMinutes())+p(t.getSeconds())+'-'+Math.random().toString(36).slice(2,5),rev:0,neg:S.neg,tipo:'boletas',estado:'borrador',fecha:f,items:[],prov:'',fact:'',total:0,nprod:0};bCarga()}
-async function bMenu(){S.doc=null;view('Carga de boletas','<p>Cargando…</p>',menu);const r=await api('list',{m:'boletas'}),sv=r.err?[]:r.l,L=loc(),ids=L.map(d=>d.id);
+const fv=x=>/^\d{4}-\d{2}-\d{2}$/.test(x.fecha||'')?x.fecha:String(x.upd||'').slice(0,10);
+async function bMenu(go){S.doc=null;view('🧾 Carga de boletas','<p>Cargando…</p>',menu);const r=await api('list',{m:'boletas'}),sv=r.err?[]:r.l,L=loc(),ids=L.map(d=>d.id);
   const mt=d=>({id:d.id,estado:'borrador',fecha:d.fecha,prov:d.prov,fact:d.fact,n:d.items.length,re:d.reabierta?1:0});
-  const P=sv.filter(x=>x.estado!=='final'&&!ids.includes(x.id)).concat(L.map(mt)),F=sv.filter(x=>x.estado==='final'&&!ids.includes(x.id)),g={};
-  F.forEach(x=>(g[x.fecha]=g[x.fecha]||[]).push(x));const ds=Object.keys(g).sort().reverse();S.bl={P,g};
-  view('Carga de boletas',`<button class="big" id="nw">➕ Nueva factura</button><button class="big" id="pd">📝 Pendientes (${P.length})</button><h3>📂 Facturas</h3>${ds.map(f=>`<button class="big" data-f="${E(f)}">📅 ${fd(f)} (${g[f].length})</button>`).join('')||'<small>Todavía no hay facturas finalizadas.</small>'}`,menu);
+  const P=sv.filter(x=>x.estado!=='final'&&!ids.includes(x.id)).concat(L.map(mt)),F=sv.filter(x=>x.estado==='final'&&!ids.includes(x.id)&&fv(x)),g={};
+  F.forEach(x=>{x.fecha=fv(x);(g[x.fecha]=g[x.fecha]||[]).push(x)});const ds=Object.keys(g).sort().reverse();S.bl={P,g};
+  view('🧾 Carga de boletas',`${!r.err&&r.v!==3?'<div class="card bad">⚠️ El servidor de Apps Script está desactualizado. Pegá el Code.gs nuevo y publicá una Nueva versión.</div>':''}<button class="big" id="nw">➕ Nueva factura</button><button class="big" id="pd">📝 Pendientes (${P.length})</button><h3>📂 Facturas</h3>${ds.map(f=>`<button class="big" data-f="${E(f)}">📅 ${fd(f)} (${g[f].length})</button>`).join('')||'<small>Todavía no hay facturas finalizadas.</small>'}`,menu);
   $('#nw').onclick=bNew;$('#pd').onclick=bPend;document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>bDia(b.dataset.f));
+  if(typeof go==='string'&&g[go])bDia(go);
   L.forEach(d=>DIRTY.add(d.id));(async()=>{for(const d of L)await bsync(d)})()}
-const bRow=x=>`<div class="card" data-i="${E(x.id)}"><b>${E(x.prov||'(sin proveedor)')}</b> · N° ${E(x.fact||'—')}<br><small>📅 ${fd(x.fecha)} · ${x.n} prod.</small> ${x.re?'<span class="chip">En edición</span>':''}<span style="float:right">${x.estado==='final'?'👁️':'›'}</span></div>`;
-function bList(t,a){view(t,a.map(bRow).join('')||'<p><small>No hay facturas.</small></p>',bMenu);document.querySelectorAll('[data-i]').forEach(c=>c.onclick=()=>bOpen(c.dataset.i))}
-function bPend(){bList('📝 Pendientes',S.bl.P)}function bDia(f){bList('📅 Facturas del '+fd(f),S.bl.g[f])}
+const bRow=x=>`<div class="card" data-i="${E(x.id)}"><div style="font-size:21px;font-weight:800;color:var(--a)">🏪 ${E(x.prov||'(sin proveedor)')}</div><div>🧾 ${E(x.fact||'—')}</div><small>📅 ${fd(fv(x))||'—'} · ${x.n} prod.</small><div class="row" style="margin-top:6px;align-items:center"><span class="chip">${x.estado==='final'?'🟢 Finalizada':'🟠 Pendiente'}${x.re?' · En edición':''}</span><b style="text-align:right">${x.estado==='final'?'👁️ Ver factura':'▶️ Continuar'}</b></div></div>`;
+function bList(t,a,s){view(t,(s?'<div class="row"><input id="bq" placeholder="🔎 Buscar proveedor o número de factura"><button class="s" id="bx" style="max-width:60px">✕</button></div>':'')+'<div id="br"></div>'+(s?'<button class="s" id="bv">↩️ Fechas</button>':''),bMenu);
+  const rn=()=>{const w=s?nz($('#bq').value).split(/\s+/).filter(Boolean):[],l=a.filter(x=>{const z=nz((x.prov||'')+' '+(x.fact||''));return w.every(y=>z.includes(y))});
+    $('#br').innerHTML=l.map(bRow).join('')||'<p><small>No hay facturas.</small></p>';document.querySelectorAll('[data-i]').forEach(c=>c.onclick=()=>bOpen(c.dataset.i))};
+  if(s){$('#bq').oninput=rn;$('#bx').onclick=()=>{$('#bq').value='';rn();$('#bq').focus()};$('#bv').onclick=()=>bMenu()}rn()}
+function bPend(){bList('📝 Pendientes',S.bl.P)}function bDia(f){bList('📅 Facturas del '+fd(f),S.bl.g[f],1)}
 async function bOpen(id){let d=loc().find(z=>z.id===id);if(d)DIRTY.add(id);else{const r=await api('get',{m:'boletas',id});if(r.err)return;d=r.doc}S.doc=d;d.estado==='final'?bVer():bCarga()}
 const bCard=(i,a)=>`<div class="card"><div style="font-size:26px;font-weight:800;color:var(--a)">${E(i.cod)} ${i.cod==='0000'?'<span class="chip">NUEVO</span>':''}</div>${E(i.desc)}<br>${i.q} × <b>$${$$(C100(i.imp)/i.q/100)}</b> = <b>$${$$(i.imp)}</b>${a?`<div class="row"><button class="s" data-e="${i.rid}">✏️</button><button class="s" data-x="${i.rid}">🗑️</button></div>`:''}</div>`;
 function bVer(){const d=S.doc,t=d.items.reduce((a,i)=>a+C100(i.imp),0);
@@ -171,12 +176,12 @@ async function bFin(){const d=S.doc;if(!confirm('¿Finalizar la factura?'))retur
   const r=await api('save',{d:Object.assign({},d,{estado:'final',reabierta:0})});if(r.conflict)return toast('Otro celular modificó esta factura. Volvé a abrirla.');
   if(r.doc){DIRTY.delete(d.id);LS('bd_'+d.id,null);S.doc=r.doc;toast('✅ Factura finalizada');bVer()}}
 const bHd=d=>`<div class="card"><div style="font-size:24px;font-weight:800;color:var(--a)">🏪 ${E(d.prov||'(sin proveedor)')}</div><div>📅 ${fd(d.fecha)||'—'}</div><small>🧾 Factura: ${E(d.fact||'—')}</small></div>`;
-function bDel(d){const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:#000a;z-index:9;display:flex;align-items:center;padding:16px';
-  o.innerHTML=`<div class="card" style="width:100%"><b>¿Querés eliminar esta factura?</b><p>Proveedor: <b>${E(d.prov||'—')}</b><br>Fecha: <b>${fd(d.fecha)||'—'}</b><br>Factura: <b>${E(d.fact||'—')}</b></p><div class="row"><button class="s" id="dc">Cancelar</button><button id="dg" style="background:#b91c1c">🗑️ Confirmar eliminación</button></div></div>`;document.body.appendChild(o);
+function bDel(d){const fin=d.estado==='final',o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:#000a;z-index:9;display:flex;align-items:center;padding:16px';
+  o.innerHTML=`<div class="card" style="width:100%"><b style="font-size:20px">${fin?'¿Eliminar factura?':'¿Querés eliminar esta factura?'}</b><div style="margin:10px 0"><div style="font-size:21px;font-weight:800">🏪 ${E(d.prov||'—')}</div>📅 ${fd(d.fecha)||'—'}<br>🧾 ${E(d.fact||'—')}</div><div class="row"><button class="s" id="dc">Cancelar</button><button id="dg" style="background:#b91c1c">${fin?'🗑️ Eliminar':'🗑️ Confirmar eliminación'}</button></div></div>`;document.body.appendChild(o);
   $('#dc').onclick=()=>o.remove();
   $('#dg').onclick=async()=>{$('#dg').disabled=true;clearTimeout(TM);while(SY)await new Promise(r=>setTimeout(r,200));
     if(d.rev>0){const r=await api('del',{id:d.id});if(r.err){o.remove();return}}
-    DIRTY.delete(d.id);LS('bd_'+d.id,null);o.remove();S.doc=null;toast('Factura eliminada');bMenu()}}
+    DIRTY.delete(d.id);LS('bd_'+d.id,null);o.remove();S.doc=null;toast('Factura eliminada');bMenu(fin?d.fecha:0)}}
 setInterval(()=>{if(S.doc&&S.doc.tipo==='boletas')bsync(S.doc)},30000);addEventListener('online',()=>{if(S.doc&&S.doc.tipo==='boletas')bsync(S.doc)});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 home();
