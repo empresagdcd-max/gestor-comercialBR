@@ -34,7 +34,7 @@ function home(){if(!S.tok)return login();S.neg='';S.g={};S.doc=null;
   document.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{S.neg=b.dataset.k;S.g={};menu()})}
 function menu(){view(NEG[S.neg].n,Object.keys(MOD).map(m=>`<button class="big" data-m="${m}">${MOD[m][1]} ${MOD[m][0]} 🔒</button>`).join('')+'<button class="big" data-m="precios">🔍 Consultar precios</button><button class="s" data-m="admin">⚙️ Configuración 🔒</button>',home);
   document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const m=b.dataset.m;m==='precios'?price():ask(m)})}
-function ask(m){const go=()=>m==='admin'?cfg():lista(m);if(S.g[m])return go();
+function ask(m){const go=()=>m==='admin'?cfg():m==='boletas'?bMenu():lista(m);if(S.g[m])return go();
   view('Ingresá el PIN','<input id="p" type="password" inputmode="numeric" placeholder="PIN"><button id="ok">Entrar</button>',menu);$('#p').focus();
   $('#ok').onclick=async()=>{const r=await api('pin',{m,pin:$('#p').value});if(r.g){S.g[m]=r.g;go()}}}
 async function lista(m){view(MOD[m]?MOD[m][0]:'',`<p>Cargando…</p>`,menu);const r=await api('list',{m});if(r.err)return menu();
@@ -59,8 +59,8 @@ function items(){const d=S.doc,B=d.tipo==='boletas',fin=d.estado==='final';
 function tot(){const d=S.doc;let h=`<p><b>${d.items.length}</b> productos</p>`;
   if(d.tipo==='boletas'){const s=d.items.reduce((a,i)=>a+i.imp,0),df=s-d.total;h+=`<p>Cargado: $${$$(s)}<br>Declarado: $${$$(d.total)}<br>Diferencia: <span class="${Math.abs(df)<.01?'ok':'bad'}">$${$$(df)}</span></p>`}
   $('#tot').innerHTML=h}
-function buscador(pick,inp,btn,box){let tm;const go=async()=>{const t=inp.value.trim();if(!t){box.innerHTML='';return}const r=await api('search',{q:t});if(r.err)return;
-  box.innerHTML=r.r.map((p,i)=>`<div class="card" data-p="${i}"><b>${E(p[0])}</b> ${E(p[1])}${pick?'':`<br>Barras: ${E(p[2])||'-'}<br>Contado: <b>${E(p[3])}</b> · Stock: <b>${E(p[4])}</b><br><small>${NEG[S.neg].n}</small>`}</div>`).join('')+(r.r.length?'':'<div class="card">No se encontró el producto.'+(pick?'<button class="s" id="pe">Registrar como producto pendiente</button>':'')+'</div>');
+function buscador(pick,inp,btn,box){let tm;const go=async()=>{const t=inp.value.trim();if(!t){box.innerHTML='';return}const r=await bus(t);if(r.err)return;
+  box.innerHTML=r.r.map((p,i)=>`<div class="card" data-p="${i}"><b>${E(p[0])}</b> ${E(p[1])}${pick?'':`<br>Barras: ${E(p[2])||'-'}<br>Contado: <b>${E(p[3])}</b> · Stock: <b>${E(p[4])}</b><br><small>${NEG[S.neg].n}</small>`}</div>`).join('')+(r.r.length?'':'<div class="card">No se encontró el producto.'+(pick&&!(S.doc&&S.doc.tipo==='boletas')?'<button class="s" id="pe">Registrar como producto pendiente</button>':'')+'</div>');
   document.querySelectorAll('[data-p]').forEach(c=>c.onclick=()=>pick&&pick(r.r[+c.dataset.p]));
   const pe=$('#pe');if(pe)pe.onclick=async()=>{const ds=prompt('Descripción del producto nuevo:');if(!ds)return;const bar=/^\d{6,}$/.test(t)?t:'';const x=await api('pend',{bar,desc:ds});if(!x.err){toast('Guardado en Productos pendientes');box.innerHTML='';pick(['',ds,bar,'',''])}}};
   inp.oninput=()=>{clearTimeout(tm);tm=setTimeout(go,350)};inp.onkeydown=e=>{if(e.key==='Enter')go()};btn.onclick=()=>scan(v=>{inp.value=v;go()})}
@@ -100,9 +100,77 @@ async function cfg(){view('Configuración','<p>Cargando…</p>',menu);const r=aw
   document.querySelectorAll('[data-o]').forEach(b=>b.onclick=async()=>{if(confirm('¿Revocar el acceso de este empleado?')){const x=await api('empOff',{id:b.dataset.o});if(!x.err)cfg()}});
   $('#ea').onclick=async()=>{const n=prompt('Nombre del empleado:');if(!n)return;const x=await api('empAdd',{name:n});if(x.code){alert('Código de acceso de '+n+':\n\n'+x.code+'\n\nAnotalo y entregáselo. No se vuelve a mostrar.');cfg()}};
   $('#pg').onclick=async()=>{const x=await api('setPin',{m:$('#pm').value,pin:$('#pn').value});if(!x.err)toast('PIN cambiado')};
-  $('#rl').onclick=async()=>{toast('Recargando…');const x=await api('reload');if(!x.err)toast('Catálogo recargado')};
+  $('#rl').onclick=async()=>{toast('Recargando…');const x=await api('reload');if(!x.err){catalogo(1);toast('Catálogo recargado')}};
   $('#bc').onclick=async()=>{const c=prompt('Código interno del producto:');if(!c)return;const b=prompt('Nuevo código de barras:');if(!b)return;
-    const all=confirm('Aceptar = actualizar en los TRES negocios (donde exista ese código).\nCancelar = solo en '+NEG[S.neg].n);const x=await api('bar',{cod:c,bar:b,all});if(!x.err)toast('Código de barras actualizado')}}
+    const all=confirm('Aceptar = actualizar en los TRES negocios (donde exista ese código).\nCancelar = solo en '+NEG[S.neg].n);const x=await api('bar',{cod:c,bar:b,all});if(!x.err){catalogo(1);toast('Código de barras actualizado')}}}
+/* ===== CARGA DE BOLETAS v2 ===== */
+const C100=v=>Math.round((+v||0)*100),mny=c=>$$(c/100),fd=f=>String(f||'').split('-').reverse().join('/'),rid=()=>'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
+const LS=(k,v)=>{try{if(v===undefined)return JSON.parse(localStorage.getItem(k));v===null?localStorage.removeItem(k):localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}};
+const nz=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+const loc=()=>Object.keys(localStorage).filter(k=>k.startsWith('bd_')).map(k=>LS(k)).filter(x=>x&&x.n===S.neg).map(x=>x.d);
+const DIRTY=new Set();let SY=0,TM=0;
+async function catalogo(f){const k='cat_'+S.neg,c=LS(k);if(!f&&c&&Date.now()-c.t<216e5)return c.d;const r=await api('catalog');if(r.c){LS(k,{t:Date.now(),d:r.c});return r.c}return c?c.d:null}
+async function bus(q){const d=await catalogo();if(!d)return api('search',{q});const t=nz(q);if(!t)return{r:[]};const ex=d.filter(r=>r[0].toLowerCase()===t||r[2]===t);
+  if(ex.length)return{r:ex.slice(0,30)};const w=t.split(/\s+/);return{r:d.filter(r=>{const x=nz(r[1]+' '+r[0]);return w.every(y=>x.includes(y))}).slice(0,30)}}
+function bst(){const e=$('#st');if(e&&S.doc)e.textContent=DIRTY.has(S.doc.id)?(navigator.onLine?'⏳ Pendiente de sincronizar':'📴 Sin conexión · guardado en el celular'):'✅ Sincronizado'}
+function chg(d){DIRTY.add(d.id);LS('bd_'+d.id,{d,n:S.neg});bst();clearTimeout(TM);TM=setTimeout(()=>bsync(d),4000)}
+async function bsync(d){if(SY||!DIRTY.has(d.id))return;SY=1;const sent=JSON.stringify(d);const r=await api('save',{d:Object.assign({},d,{estado:'borrador'})});SY=0;
+  if(r.conflict){const a=r.doc,k=x=>JSON.stringify([x.items,x.prov,x.fact,x.total,x.nprod,x.fecha]);
+    if(a.estado!=='final'&&k(a)===k(d)){d.rev=a.rev;DIRTY.delete(d.id);LS('bd_'+d.id,null)}
+    else if(confirm('Otro celular modificó esta factura.\nAceptar = cargar la versión nueva (se pierden tus cambios).\nCancelar = conservar la tuya y reemplazar la del otro celular.')){DIRTY.delete(d.id);LS('bd_'+d.id,null);S.doc=a;a.estado==='final'?bVer():bCarga();return}
+    else{d.rev=a.rev;bsync(d)}}
+  else if(r.doc){const same=JSON.stringify(d)===sent;d.rev=r.doc.rev;if(same){DIRTY.delete(d.id);LS('bd_'+d.id,null)}else{LS('bd_'+d.id,{d,n:S.neg});bsync(d)}}
+  bst()}
+function bNew(){const t=new Date(),p=n=>String(n).padStart(2,'0'),f=`${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}`;
+  S.doc={id:'B'+S.neg.toUpperCase()+'-'+f.replace(/-/g,'')+'-'+p(t.getHours())+p(t.getMinutes())+p(t.getSeconds())+'-'+Math.random().toString(36).slice(2,5),rev:0,neg:S.neg,tipo:'boletas',estado:'borrador',fecha:f,items:[],prov:'',fact:'',total:0,nprod:0};bCarga()}
+async function bMenu(){S.doc=null;view('Carga de boletas','<p>Cargando…</p>',menu);const r=await api('list',{m:'boletas'}),sv=r.err?[]:r.l,L=loc(),ids=L.map(d=>d.id);
+  const mt=d=>({id:d.id,estado:'borrador',fecha:d.fecha,prov:d.prov,fact:d.fact,n:d.items.length,re:d.reabierta?1:0});
+  const P=sv.filter(x=>x.estado!=='final'&&!ids.includes(x.id)).concat(L.map(mt)),F=sv.filter(x=>x.estado==='final'&&!ids.includes(x.id)),g={};
+  F.forEach(x=>(g[x.fecha]=g[x.fecha]||[]).push(x));const ds=Object.keys(g).sort().reverse();S.bl={P,g};
+  view('Carga de boletas',`<button class="big" id="nw">➕ Nueva factura</button><button class="big" id="pd">📝 Pendientes (${P.length})</button><h3>📂 Facturas</h3>${ds.map(f=>`<button class="big" data-f="${E(f)}">📅 ${fd(f)} (${g[f].length})</button>`).join('')||'<small>Todavía no hay facturas finalizadas.</small>'}`,menu);
+  $('#nw').onclick=bNew;$('#pd').onclick=bPend;document.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>bDia(b.dataset.f));
+  L.forEach(d=>DIRTY.add(d.id));(async()=>{for(const d of L)await bsync(d)})()}
+const bRow=x=>`<div class="card" data-i="${E(x.id)}"><b>${E(x.prov||'(sin proveedor)')}</b> · N° ${E(x.fact||'—')}<br><small>📅 ${fd(x.fecha)} · ${x.n} prod.</small> ${x.re?'<span class="chip">En edición</span>':''}<span style="float:right">${x.estado==='final'?'👁️':'›'}</span></div>`;
+function bList(t,a){view(t,a.map(bRow).join('')||'<p><small>No hay facturas.</small></p>',bMenu);document.querySelectorAll('[data-i]').forEach(c=>c.onclick=()=>bOpen(c.dataset.i))}
+function bPend(){bList('📝 Pendientes',S.bl.P)}function bDia(f){bList('📅 Facturas del '+fd(f),S.bl.g[f])}
+async function bOpen(id){let d=loc().find(z=>z.id===id);if(d)DIRTY.add(id);else{const r=await api('get',{m:'boletas',id});if(r.err)return;d=r.doc}S.doc=d;d.estado==='final'?bVer():bCarga()}
+const bCard=(i,a)=>`<div class="card"><div style="font-size:26px;font-weight:800;color:var(--a)">${E(i.cod)} ${i.cod==='0000'?'<span class="chip">NUEVO</span>':''}</div>${E(i.desc)}<br>${i.q} × <b>$${$$(C100(i.imp)/i.q/100)}</b> = <b>$${$$(i.imp)}</b>${a?`<div class="row"><button class="s" data-e="${i.rid}">✏️</button><button class="s" data-x="${i.rid}">🗑️</button></div>`:''}</div>`;
+function bVer(){const d=S.doc,t=d.items.reduce((a,i)=>a+C100(i.imp),0);
+  view('Factura · '+E(d.prov),`<div class="card"><b>${E(d.prov)}</b> · N° ${E(d.fact)}<br>📅 ${fd(d.fecha)}<br>Total declarado: <b>$${$$(d.total)}</b><br>Productos declarados: <b>${d.nprod||'—'}</b> · cargados: <b>${d.items.length}</b><br>Total acumulado: <b>$${mny(t)}</b></div>${d.items.map(i=>bCard(i)).join('')}<button id="ed">✏️ Editar factura</button><button id="ex" class="s">📤 Exportar CSV</button><button id="dl" class="s" style="color:#b91c1c;border-color:#b91c1c">🗑️ Eliminar factura</button>`,bMenu);
+  $('#ex').onclick=exportar;
+  $('#ed').onclick=()=>{if(confirm('¿Editar esta factura? Pasará a Pendientes hasta que la vuelvas a finalizar.')){d.estado='borrador';d.reabierta=1;chg(d);bCarga()}};
+  $('#dl').onclick=async()=>{if(!confirm('¿Querés eliminar la factura '+d.fact+' de '+d.prov+' del '+fd(d.fecha)+'?'))return;const r=await api('del',{id:d.id});if(!r.err){toast('Factura eliminada');bMenu()}}}
+function bCarga(){const d=S.doc,okh=()=>!!(d.prov&&d.fact&&d.total>0&&d.nprod>0);
+  view('Factura'+(d.reabierta?' (en edición)':''),`<div class="card"><span class="chip" id="st"></span><div class="row"><input type="date" id="f" value="${E(d.fecha)}"><input id="nf" inputmode="numeric" placeholder="Cant. de productos" value="${d.nprod||''}"></div><input id="pv" placeholder="Proveedor" value="${E(d.prov)}"><input id="fa" placeholder="N° de factura" value="${E(d.fact)}"><input id="tt" inputmode="decimal" placeholder="Total declarado $" value="${d.total||''}"></div><div id="pz"></div>`,()=>{bsync(d);bMenu()});
+  let was=okh();const h=(id,k,f)=>$(id).oninput=e=>{d[k]=f?f(e.target.value):e.target.value;chg(d);const o=okh();if(o!==was){was=o;bProd()}};
+  h('#f','fecha');h('#pv','prov');h('#fa','fact');h('#tt','total',num);h('#nf','nprod',v=>Math.max(0,parseInt(v)||0));bProd();bst()}
+function bProd(){const d=S.doc;if(!(d.prov&&d.fact&&d.total>0&&d.nprod>0)){$('#pz').innerHTML='<p class="bad">Completá proveedor, N° de factura, total y cantidad de productos para empezar.</p>';return}
+  $('#pz').innerHTML=`<div class="row"><input id="q" placeholder="Código, barras o nombre"><button id="sc" style="max-width:70px">📷</button></div><div id="rs"></div><div id="fm"></div><div class="row"><button id="ls">📋 Listado (${d.items.length})</button><button id="nw" class="s">➕ Nuevo producto</button></div><button id="sv" class="s">💾 Guardar</button>`;
+  buscador(p=>bForm(p),$('#q'),$('#sc'),$('#rs'));$('#ls').onclick=bLista;$('#nw').onclick=()=>bForm(['0000','','','',''],1);
+  $('#sv').onclick=async()=>{await bsync(d);toast(DIRTY.has(d.id)?'Pendiente de sincronizar':'Guardado ✅')}}
+function bForm(p,nw){const d=S.doc;$('#rs').innerHTML='';
+  if(!nw){const x=d.items.find(i=>i.cod===p[0]);if(x){toast('⚠️ Este producto ya está cargado.');return bEdit(x.rid)}}
+  $('#fm').innerHTML=`<div class="card"><b style="font-size:24px">${nw?'0000 · NUEVO':E(p[0])}</b> ${nw?'':E(p[1])}${nw?'<input id="ds" placeholder="Descripción">':''}<input id="qt" inputmode="decimal" placeholder="Cantidad"><input id="im" inputmode="decimal" placeholder="Importe total $"><b id="pu"></b><div class="row"><button class="s" id="cn">↩️</button><button id="ad">➕ Agregar</button></div></div>`;
+  const u=()=>{const q=num($('#qt').value),i=C100($('#im').value);$('#pu').textContent=q>0&&i>0?'Costo unitario: $'+$$(i/q/100):''};$('#qt').oninput=u;$('#im').oninput=u;($('#ds')||$('#qt')).focus();
+  $('#cn').onclick=()=>$('#fm').innerHTML='';
+  $('#ad').onclick=()=>{const q=num($('#qt').value),im=C100($('#im').value),ds=nw?$('#ds').value.trim():p[1];if(!ds)return toast('Falta la descripción');if(!(q>0))return toast('La cantidad debe ser mayor que cero');if(!(im>0))return toast('Ingresá el importe');
+    d.items.push({rid:rid(),cod:p[0],desc:ds,bar:p[2],q,imp:im/100,nuevo:nw?1:0});chg(d);$('#fm').innerHTML='';$('#q').value='';$('#ls').textContent='📋 Listado ('+d.items.length+')'}}
+function bEdit(id){const d=S.doc,i=d.items.find(x=>x.rid===id);if(!i)return;const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;background:#000a;z-index:9;display:flex;align-items:center;padding:16px';
+  o.innerHTML=`<div class="card" style="width:100%"><b style="font-size:22px">${E(i.cod)}</b> ${E(i.desc)}<input id="eq" inputmode="decimal" value="${i.q}"><input id="ei" inputmode="decimal" value="${i.imp}"><b id="eu"></b><div class="row"><button class="s" id="ec">Cancelar</button><button id="eg">💾 Guardar</button></div></div>`;document.body.appendChild(o);
+  const u=()=>{const q=num($('#eq').value),m=C100($('#ei').value);$('#eu').textContent=q>0&&m>0?'Costo unitario: $'+$$(m/q/100):''};$('#eq').oninput=u;$('#ei').oninput=u;u();$('#ec').onclick=()=>o.remove();
+  $('#eg').onclick=()=>{const q=num($('#eq').value),m=C100($('#ei').value);if(!(q>0)||!(m>0))return toast('Cantidad e importe deben ser mayores que cero');i.q=q;i.imp=m/100;chg(d);o.remove();if($('#lst'))bLista();else if($('#ls'))toast('Producto actualizado')}}
+function bLista(){const d=S.doc,t=d.items.reduce((a,i)=>a+C100(i.imp),0),dm=t-C100(d.total),dn=d.items.length-d.nprod,good=!dm&&!dn,m=[];
+  if(dn)m.push(dn<0?`⚠️ Falta cargar ${-dn} producto${dn<-1?'s':''}.`:`⚠️ Sobra${dn>1?'n':''} ${dn} producto${dn>1?'s':''}.`);if(dm)m.push(`⚠️ Existe una diferencia de $${mny(Math.abs(dm))}.`);
+  const tr=(a,b,c)=>`<tr><td>${a}</td><td align="right" class="${c||''}">${b}</td></tr>`;
+  view('📋 Listado ('+d.items.length+')',`<div id="lst"></div><div class="card"><span class="chip" id="st"></span><table style="width:100%">${tr('Total declarado','$'+$$(d.total))}${tr('Total acumulado','$'+mny(t))}${tr('<b>Diferencia</b>',(dm<0?'-':'')+'$'+mny(Math.abs(dm)),dm?'bad':'ok')}</table></div><div class="card"><table style="width:100%">${tr('Productos declarados',d.nprod)}${tr('Productos cargados',d.items.length)}${tr('<b>Diferencia</b>',dn,dn?'bad':'ok')}</table></div>${good?'<p class="ok">✅ Factura correcta.</p>':m.map(x=>`<p class="bad">${x}</p>`).join('')}${d.items.map(i=>bCard(i,1)).join('')}<button class="s" id="vb">↩️ Volver</button><button class="s" id="sv">💾 Guardar</button><button id="fz" ${good?'':'style="opacity:.5"'}>✅ Finalizar</button>`,bCarga);
+  bst();$('#vb').onclick=bCarga;$('#sv').onclick=async()=>{await bsync(d);toast(DIRTY.has(d.id)?'Pendiente de sincronizar':'Guardado ✅')};
+  document.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>bEdit(b.dataset.e));
+  document.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{if(confirm('¿Querés eliminar este producto de la factura?')){d.items=d.items.filter(i=>i.rid!==b.dataset.x);chg(d);bLista()}});
+  $('#fz').onclick=()=>good?bFin():toast(m[0])}
+async function bFin(){const d=S.doc;if(!confirm('¿Finalizar la factura?'))return;toast('Finalizando…');while(SY)await new Promise(r=>setTimeout(r,200));await bsync(d);
+  const r=await api('save',{d:Object.assign({},d,{estado:'final',reabierta:0})});if(r.conflict)return toast('Otro celular modificó esta factura. Volvé a abrirla.');
+  if(r.doc){DIRTY.delete(d.id);LS('bd_'+d.id,null);S.doc=r.doc;toast('✅ Factura finalizada');bVer()}}
+setInterval(()=>{if(S.doc&&S.doc.tipo==='boletas')bsync(S.doc)},30000);addEventListener('online',()=>{if(S.doc&&S.doc.tipo==='boletas')bsync(S.doc)});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 home();
 </script></body></html>
